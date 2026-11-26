@@ -1,0 +1,17 @@
+# /etc/systemd/system/femtogain-web.service
+[Unit]
+Description=Femto Gain Controller web UI (femtogain-web, port from web.conf)
+After=network-online.target femtogain-ioc.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/epics/iocs/femtogain/tools/femtogain-web.py
+WorkingDirectory=/usr/local/epics/iocs/femtogain/tools
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=3
+MemoryMax=200M
+
+[Install]
+WantedBy=multi-user.target

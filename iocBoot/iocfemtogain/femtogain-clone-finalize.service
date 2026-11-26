@@ -1,0 +1,14 @@
+[Unit]
+Description=Femto Gain Controller clone finalize: remove SSH host keys at shutdown (one shot, armed by femtogainctl clone-prep)
+DefaultDependencies=no
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/bin/sh -c 'rm -f /etc/ssh/ssh_host_*; : > /etc/machine-id; systemctl disable femtogain-clone-finalize.service >/dev/null 2>&1 || true'
+
+[Install]
+WantedBy=multi-user.target

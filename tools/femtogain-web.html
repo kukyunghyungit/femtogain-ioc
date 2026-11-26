@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Femto Gain Controller</title>
+<style>
+  :root { --bg:#f4f5f7; --card:#fff; --ink:#1b1f24; --mute:#667085; --line:#e4e7ec; --acc:#2563eb; --ok:#16a34a; --bad:#dc2626; --warn:#b45309; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.5 system-ui, -apple-system, "Noto Sans KR", sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--ink); color:#fff; padding:14px 20px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; }
+  header h1 { font-size:18px; margin:0; font-weight:600; }
+  header .sub { color:#cbd5e1; font-size:13px; }
+  main { max-width:960px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { font-size:15px; margin:0 0 12px; color:var(--mute); font-weight:600; text-transform:uppercase; letter-spacing:.04em; }
+  .wide { grid-column:1 / -1; }
+  .kv { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; font-size:14px; }
+  .kv b { color:var(--mute); font-weight:500; }
+  .chs { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin:10px 0; }
+  .ch { padding:12px; border:2px solid var(--line); border-radius:10px; background:#fafafa; }
+  .ch h3 { margin:0 0 6px; font-size:18px; display:flex; justify-content:space-between; align-items:baseline; }
+  .ch h3 small { font-size:12px; color:var(--mute); font-weight:400; }
+  .ch.ovl { border-color:var(--bad); background:#fef2f2; }
+  .ch.mismatch { border-color:var(--warn); }
+  .ch .kv { margin-top:8px; }
+  .ch button { margin-top:8px; padding:5px 10px; font-size:13px; }
+  .led { display:inline-block; width:12px; height:12px; border-radius:50%; background:#d1d5db; vertical-align:-1px; margin-right:4px; }
+  .led.on { background:var(--bad); box-shadow:0 0 6px var(--bad); }
+  .led.latch { background:var(--warn); }
+  .note { background:#eef2ff; border:1px solid #c7d2fe; color:#3730a3; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:10px; }
+  label { display:block; font-size:13px; color:var(--mute); margin-top:8px; }
+  input, select { width:100%; padding:8px 10px; border:1px solid var(--line); border-radius:8px; font:inherit; }
+  button { padding:8px 14px; border:0; border-radius:8px; background:var(--acc); color:#fff; font:inherit; cursor:pointer; margin-top:10px; }
+  button.sec { background:#e5e7eb; color:var(--ink); }
+  button.bad { background:var(--bad); }
+  button:disabled { opacity:.5; cursor:default; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:end; }
+  .row > div { flex:1; min-width:120px; }
+  pre { background:#0f172a; color:#e2e8f0; padding:12px; border-radius:8px; font-size:12px; max-height:320px; overflow:auto; white-space:pre-wrap; margin:8px 0 0; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; background:#e5e7eb; }
+  .pill.ok { background:#dcfce7; color:#166534; } .pill.bad { background:#fee2e2; color:#991b1b; }
+  .warn { background:#fef3c7; border:1px solid #fcd34d; color:#78350f; padding:8px 12px; border-radius:8px; font-size:13px; margin-bottom:12px; }
+  #toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 16px; border-radius:8px; font-size:14px; display:none; max-width:90vw; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Femto Gain Controller <span class="sub" id="host"></span></h1>
+  <div class="sub">PREFIX <b id="prefix" style="color:#fff"></b> · IOC <span class="pill" id="svc">…</span> · Heartbeat <span id="hb">–</span></div>
+</header>
+<main>
+  <section class="card wide" id="pwwarn" style="display:none"><div class="warn">로그인 비밀번호가 공장 기본값입니다 (SSH와 웹 공용). 아래 "장비 설정"에서, 또는 장비에서 <code>femtogainctl passwd 새비밀번호</code> 로 바꾸세요.</div></section>
+
+  <section class="card wide">
+    <h2>게인 · Overload</h2>
+    <div class="note">증폭기 전면 스위치: <b>GAIN = Remote</b>, <b>결합 = DC</b>, <b>모드 = L</b> (저잡음). 게인 값은 저잡음 모드 기준이며, 모드·결합은 이 장치로 제어하거나 읽을 수 없습니다.</div>
+    <div class="chs" id="chs"></div>
+    <div class="kv"><b>시작 게인</b><span id="as"></span></div>
+    <button class="sec" onclick="ovlReset('')">Overload 래치 전체 해제</button>
+  </section>
+
+  <section class="card">
+    <h2>네트워크</h2>
+    <div class="kv" style="margin-bottom:8px"><b>현재</b><span id="netlive"></span></div>
+    <label>모드</label>
+    <select id="mode" onchange="document.getElementById('static').style.display=this.value==='static'?'':'none'"><option value="static">고정 IP</option><option value="dhcp">DHCP</option></select>
+    <div id="static">
+      <div class="row"><div><label>IP 주소</label><input id="ip" placeholder="10.0.147.201"></div><div><label>넷마스크</label><input id="mask" placeholder="255.255.255.0"></div></div>
+      <div class="row"><div><label>게이트웨이</label><input id="gw" placeholder="10.0.147.99"></div><div><label>DNS (쉼표 구분)</label><input id="dns" placeholder="141.223.1.2,8.8.8.8"></div></div>
+    </div>
+    <button onclick="applyIp()">적용</button>
+    <div style="font-size:12px;color:var(--mute);margin-top:6px">IP를 바꾸면 이 페이지는 끊깁니다. 새 주소로 다시 접속하세요.</div>
+  </section>
+
+  <section class="card">
+    <h2>장비 설정</h2>
+    <label>EPICS PV prefix (장비마다 달라야 함, ':'로 끝)</label>
+    <div class="row"><div><input id="newprefix" placeholder="GC01:"></div><div style="flex:0"><button onclick="setPrefix()">변경</button></div></div>
+    <label>채널 이름 (CH1–CH4, PV = PREFIX + 이름 + Gain · 영문자로 시작, 서로 달라야 함)</label>
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px"><div><div style="font-size:12px;font-weight:600;margin-bottom:3px">CH1</div><input id="chname1" placeholder="" style="width:100%;box-sizing:border-box;min-width:0"></div><div><div style="font-size:12px;font-weight:600;margin-bottom:3px">CH2</div><input id="chname2" placeholder="" style="width:100%;box-sizing:border-box;min-width:0"></div><div><div style="font-size:12px;font-weight:600;margin-bottom:3px">CH3</div><input id="chname3" placeholder="" style="width:100%;box-sizing:border-box;min-width:0"></div><div><div style="font-size:12px;font-weight:600;margin-bottom:3px">CH4</div><input id="chname4" placeholder="" style="width:100%;box-sizing:border-box;min-width:0"></div></div>
+    <div style="margin-top:8px"><button onclick="setChNames()">변경</button></div>
+    <div style="font-size:12px;color:var(--mute);margin-top:6px">이름을 바꾸면 PV 이름이 바뀌고 IOC가 재시작되어 전 채널이 시작 게인(E3)으로 돌아갑니다. 칸에 흐리게 보이는 것이 현재 이름이고, 바꿀 채널에만 새 이름(예: Io)을 입력합니다. 빈 칸은 현재 이름을 유지합니다.</div>
+    <label>호스트명</label>
+    <div class="row"><div><input id="newhost" placeholder="fgc-unit02"></div><div style="flex:0"><button onclick="setHost()">변경</button></div></div>
+    <label>로그인 비밀번호 (SSH · 웹 공용, 계정 <span id="user">root</span>)</label>
+    <div class="row"><div><input id="newpw" type="password" placeholder="새 비밀번호 (4자 이상)"></div><div style="flex:0"><button onclick="setPw()">변경</button></div></div>
+    <div style="font-size:12px;color:var(--mute);margin-top:6px">IP·비밀번호 공장 초기화는 보드 헤더의 리셋 점퍼/스위치(핀 36–34, 5초 이상)로만 가능합니다.</div>
+    <label>IOC 서비스</label>
+    <div class="row"><button class="sec" onclick="act('/api/service',{action:'restart'},'IOC 재시작')">재시작</button><button class="sec" onclick="act('/api/service',{action:'start'},'IOC 시작')">시작</button><button class="bad" onclick="act('/api/service',{action:'stop'},'IOC 중지')">중지</button></div>
+  </section>
+
+  <section class="card wide">
+    <h2>IOC 로그 <button class="sec" style="margin:0;padding:3px 10px;font-size:12px" onclick="loadLog()">새로고침</button></h2>
+    <pre id="log">…</pre>
+  </section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = id => document.getElementById(id);
+let busy = false, netFilled = false;
+function toast(msg, ms=4000){ const t=$('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(t._h); t._h=setTimeout(()=>t.style.display='none', ms); }
+async function api(path, body){ const r = await fetch(path, body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{}); return r.json(); }
+async function act(path, body, what){
+  if (busy) return; if (what && !confirm(what+' 실행할까요?')) return;
+  busy = true; try { const r = await api(path, body); toast((r.ok?'완료: ':'실패: ')+what+'\n'+(r.output||r.error||'').slice(-600), r.ok?4000:8000); }
+  catch(e){ toast('연결이 끊겼습니다 (IP 변경 중이면 정상): '+e, 8000); } finally { busy=false; refresh(); }
+}
+const GAINS = ['E3','E4','E5','E6','E7','E8','E9'];   // mbbo state strings (Rev.1), code 0..6
+const gainLabel = c => `1e${c+3} V/A`;
+async function setGain(ch, sel){
+  const code = sel.value;
+  if (busy || !confirm(`채널 ${ch} 게인을 ${gainLabel(+code)} 로 바꿀까요?`)) { sel.dataset.dirty=''; return refresh(); }
+  busy=true; try{ const r=await api('/api/gain',{ch:ch,gain:code}); if(!r.ok) toast('실패: '+(r.output||r.error), 8000); }
+  catch(e){ toast('연결 실패: '+e, 8000); } finally{ busy=false; sel.dataset.dirty=''; refresh(); }
+}
+async function ovlReset(ch){ if (busy) return; busy=true; try{ const r=await api('/api/ovlreset',{ch:ch}); if(!r.ok) toast('실패: '+(r.output||r.error), 8000); } catch(e){ toast('연결 실패: '+e, 8000); } finally{ busy=false; refresh(); } }
+function renderCh(s){
+  const box=$('chs');
+  if(!box.children.length){ for(let i=1;i<=4;i++){ const d=document.createElement('div'); d.className='ch'; d.id='chb'+i;
+    d.innerHTML=`<h3><span>CH${i} <span id="chn${i}"></span></span><small id="chpv${i}"></small></h3>`
+      +`<label>게인 설정</label><select id="gsel${i}">`+GAINS.map((g,c)=>`<option value="${c}">${gainLabel(c)} (${g})</option>`).join('')+`</select>`
+      +`<div class="kv"><b>핀 readback</b><span id="grb${i}">–</span><b>Overload</b><span><span class="led" id="ovl${i}"></span><span id="ovlt${i}">–</span></span><b>래치</b><span><span class="led" id="lat${i}"></span><span id="latt${i}">–</span></span><b>발생 횟수</b><span id="cnt${i}">–</span></div>`
+      +`<button class="sec" id="rst${i}">래치 · 횟수 해제</button>`;
+    box.appendChild(d);
+    const sel=d.querySelector('select'); sel.onfocus=()=>sel.dataset.dirty='1'; sel.onblur=()=>sel.dataset.dirty=''; sel.onchange=()=>setGain(i, sel);
+    $('rst'+i).onclick=()=>ovlReset(i); } }
+  for(const c of (s.channels||[])){ const i=c.ch, d=$('chb'+i), sel=$('gsel'+i), code=GAINS.indexOf(c.gain);
+    $('chn'+i).textContent=c.name; (window._chnames=window._chnames||[])[i-1]=c.name; if($('chname'+i)) $('chname'+i).placeholder=c.name; $('chpv'+i).textContent=s.prefix+c.name+'Gain';
+    if(!sel.dataset.dirty && code>=0) sel.value=code; sel.disabled = c.gain==null;
+    const rbc=GAINS.indexOf(c.gain_rb);
+    $('grb'+i).textContent = c.gain_rb==null ? '–' : (rbc>=0 ? `${gainLabel(rbc)} (${c.gain_rb})` : `정의되지 않은 코드 (${c.gain_rb})`);
+    d.classList.toggle('mismatch', c.gain!=null && c.gain_rb!=c.gain); d.classList.toggle('ovl', c.ovl==='Overload');
+    $('ovl'+i).classList.toggle('on', c.ovl==='Overload'); $('ovlt'+i).textContent=c.ovl ?? '–';
+    $('lat'+i).classList.toggle('latch', c.latch==='Overload'); $('latt'+i).textContent = c.latch==null ? '–' : (c.latch==='Overload' ? 'Overload 발생 기록 있음' : 'Normal');
+    $('cnt'+i).textContent = c.count==null ? '–' : `${c.count}회 (래치 해제 이후)`; }
+  $('as').textContent = '저장 안 함 — IOC 시작 시 전 채널 기본값(E3)';
+}
+async function refresh(){
+  try{ const s = await api('/api/status');
+    $('host').textContent = '· '+s.hostname; $('user').textContent = s.user||'root'; $('prefix').textContent = s.prefix; $('hb').textContent = s.heartbeat ?? '–';
+    const sv=$('svc'); sv.textContent=s.service; sv.className='pill '+(s.service==='active'?'ok':'bad');
+    renderCh(s); $('pwwarn').style.display = s.default_password?'':'none';
+    const n=s.net||{}; $('netlive').textContent = (n['Mode']==='DHCP'?'DHCP · ':'')+(n['Live']||'')+'  (설정: '+(n['Address']||'DHCP')+')';
+    if(!netFilled && n['Address']){ netFilled=true; const [ip,p]=n['Address'].split('/'); $('ip').value=ip; $('mask').value=prefixToMask(p||'24'); $('gw').value=n['Gateway']||''; $('dns').value=n['DNS']||''; $('newprefix').placeholder=s.prefix; $('newhost').placeholder=s.hostname; if(n['Mode']==='DHCP'){$('mode').value='dhcp'; $('static').style.display='none';} }
+  }catch(e){ $('svc').textContent='연결 끊김'; $('svc').className='pill bad'; }
+}
+function prefixToMask(p){ p=+p; const m = p===0?0:(0xffffffff<<(32-p))>>>0; return [24,16,8,0].map(s=>(m>>>s)&255).join('.'); }
+function applyIp(){ const mode=$('mode').value; if(mode==='dhcp') return act('/api/ip',{mode:'dhcp'},'DHCP로 전환');
+  act('/api/ip',{mode:'static',ip:$('ip').value.trim(),netmask:$('mask').value.trim(),gateway:$('gw').value.trim(),dns:$('dns').value.trim()}, `고정 IP ${$('ip').value.trim()} 적용`); }
+function setPrefix(){ const p=$('newprefix').value.trim(); if(!p) return toast('PREFIX를 입력하세요'); act('/api/prefix',{prefix:p},`PREFIX를 ${p} 로 변경 (IOC 재시작)`); }
+function setChNames(){ const cur=(window._chnames||[]); const n=[1,2,3,4].map(i=>$('chname'+i).value.trim()||cur[i-1]||''); if(n.some(x=>!x)) return toast('채널 이름을 입력하세요'); act('/api/chnames',{names:n},`채널 이름을 ${n.join(', ')} 로 변경 (IOC 재시작, 게인 E3)`); [1,2,3,4].forEach(i=>$('chname'+i).value=''); }
+function setPw(){ const p=$('newpw').value; if(p.length<4) return toast('4자 이상 입력하세요'); act('/api/password',{password:p},'로그인 비밀번호 변경 (다음 로그인부터 적용)'); $('newpw').value=''; }
+function setHost(){ const h=$('newhost').value.trim(); if(!h) return toast('호스트명을 입력하세요'); act('/api/hostname',{hostname:h},`호스트명을 ${h} 로 변경`); }
+async function loadLog(){ try{ const r=await api('/api/log?n=80'); const el=$('log'); el.textContent=r.log; el.scrollTop=el.scrollHeight; }catch(e){} }
+refresh(); loadLog(); setInterval(refresh, 1000); setInterval(loadLog, 10000);
+</script>
+</body>
+</html>

@@ -1,0 +1,379 @@
+# femtogainCh.template — one FEMTO DLPCA-200 channel (3 gain bits out, 1 overload in)
+#
+# Loaded once per channel by st.cmd.  Macros
+#   P      PV prefix, e.g. "GC01:"      (PREFIX in ioc.conf)
+#   S      channel signal name, e.g. "Io"      (CHn_NAME in ioc.conf)
+#   CH     channel number 1..4 (DESC text only)
+#   CHIP   gpiochip name                       (default gpiochip0)
+#   G0 G1 G2   gpiochip lines of the gain bits (LSB, middle, MSB)
+#   OVL    gpiochip line of the overload input (active-LOW at the pin)
+#   GAIN   gain code at every IOC start (0..6); gains are not saved
+#   BLANK  seconds the overload latch/counter ignore the input after a
+#          gain change (default 0.5)
+#
+# PV name $(P)$(S)Overload and the E3..E9 state strings are inherited from
+# Femto Gain Controller Rev.1 (FEMTO.template).  The gain record is
+# $(P)$(S)Gain (Rev.1: $(P)$(S)GainValue; renamed 2026-11-26).
+# Records ending in "_" are internal.
+#
+# Gain code (amplifier front panel: GAIN = Remote, low-noise mode)
+#   code  G2 G1 G0   gain
+#    0     L  L  L   1e3 V/A        4   H  L  L   1e7 V/A
+#    1     L  L  H   1e4 V/A        5   H  L  H   1e8 V/A
+#    2     L  H  L   1e5 V/A        6   H  H  L   1e9 V/A
+#    3     L  H  H   1e6 V/A        7   H  H  H   undefined — never driven
+
+# =====================================================================
+#  Gain select (user-facing; Rev.1 name was GainValue)
+# =====================================================================
+record(mbbo, "$(P)$(S)Gain") {
+    field(DESC, "CH$(CH) DLPCA-200 gain select")
+    field(DTYP, "Soft Channel")
+    field(PINI, "YES")
+    field(UNSV, "MAJOR")
+    field(ZRST, "E3")
+    field(ZRVL, "0")
+    field(ONST, "E4")
+    field(ONVL, "1")
+    field(TWST, "E5")
+    field(TWVL, "2")
+    field(THST, "E6")
+    field(THVL, "3")
+    field(FRST, "E7")
+    field(FRVL, "4")
+    field(FVST, "E8")
+    field(FVVL, "5")
+    field(SXST, "E9")
+    field(SXVL, "6")
+    field(VAL,  "$(GAIN=0)")
+    field(FLNK, "$(P)$(S)GainChk_")
+}
+
+# --- accept codes 0..6 only; anything else never reaches the pins -----
+record(calcout, "$(P)$(S)GainChk_") {
+    field(INPA, "$(P)$(S)Gain NPP NMS")
+    field(CALC, "A>=0&&A<=6")
+    field(OOPT, "When Non-zero")
+    field(DOPT, "Use OCAL")
+    field(OCAL, "A")
+    field(OUT,  "$(P)$(S)GainCode_ PP")
+    field(FLNK, "$(P)$(S)GainRej_")
+}
+# --- rejected value: put the last accepted code back into Gain ---
+# ODLY makes the write-back run from a callback after Gain has finished
+# processing (a link put to a record that is still active is ignored).
+record(calcout, "$(P)$(S)GainRej_") {
+    field(ODLY, "0.02")
+    field(INPA, "$(P)$(S)Gain NPP NMS")
+    field(INPB, "$(P)$(S)GainCode_ NPP NMS")
+    field(CALC, "A<0||A>6")
+    field(OOPT, "When Non-zero")
+    field(DOPT, "Use OCAL")
+    field(OCAL, "B")
+    field(OUT,  "$(P)$(S)Gain PP")
+}
+# Last accepted code.  Always starts at 0 so a bad DEFAULT_GAIN / .sav
+# value falls back to the lowest gain.
+record(longout, "$(P)$(S)GainCode_") {
+    field(DTYP, "Soft Channel")
+    field(DRVL, "0")
+    field(DRVH, "6")
+    field(VAL,  "0")
+    field(FLNK, "$(P)$(S)OvlBlankTrig_")
+}
+# Start the overload blanking window (see OvlBlank_ below) before any gain
+# bit changes, then go on to the bit chain.
+record(calcout, "$(P)$(S)OvlBlankTrig_") {
+    field(CALC, "1")
+    field(OUT,  "$(P)$(S)OvlBlank_ PP")
+    field(FLNK, "$(P)$(S)Clr0_")
+}
+
+# --- code -> bits, in one processing chain -----------------------------
+# Pass 1 drops the bits that go 1->0, pass 2 raises the bits that go 0->1.
+# Every intermediate code is then a bit-subset of the old or the new code,
+# so the transition can never pass through 7 (H H H).
+record(calcout, "$(P)$(S)Clr0_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(INPB, "$(P)$(S)G0 NPP NMS")
+    field(CALC, "(A&1)&&B")
+    field(OUT,  "$(P)$(S)G0 PP")
+    field(FLNK, "$(P)$(S)Clr1_")
+}
+record(calcout, "$(P)$(S)Clr1_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(INPB, "$(P)$(S)G1 NPP NMS")
+    field(CALC, "((A>>1)&1)&&B")
+    field(OUT,  "$(P)$(S)G1 PP")
+    field(FLNK, "$(P)$(S)Clr2_")
+}
+record(calcout, "$(P)$(S)Clr2_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(INPB, "$(P)$(S)G2 NPP NMS")
+    field(CALC, "((A>>2)&1)&&B")
+    field(OUT,  "$(P)$(S)G2 PP")
+    field(FLNK, "$(P)$(S)Set0_")
+}
+record(calcout, "$(P)$(S)Set0_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(CALC, "A&1")
+    field(OUT,  "$(P)$(S)G0 PP")
+    field(FLNK, "$(P)$(S)Set1_")
+}
+record(calcout, "$(P)$(S)Set1_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(CALC, "(A>>1)&1")
+    field(OUT,  "$(P)$(S)G1 PP")
+    field(FLNK, "$(P)$(S)Set2_")
+}
+record(calcout, "$(P)$(S)Set2_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(CALC, "(A>>2)&1")
+    field(OUT,  "$(P)$(S)G2 PP")
+    field(FLNK, "$(P)$(S)RBFan_")
+}
+
+# =====================================================================
+#  Raw GPIO outputs (74AHCT245 -> DLPCA-200 gain bits).  Debug use:
+#  writing these directly makes Gain and Gain-RB disagree.
+# =====================================================================
+record(bo, "$(P)$(S)G0") {
+    field(DESC, "CH$(CH) gain LSB")
+    field(DTYP, "GPIO")
+    field(OUT,  "@$(CHIP=gpiochip0) $(G0)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+    field(FLNK, "$(P)$(S)BitGuard_")
+}
+record(bo, "$(P)$(S)G1") {
+    field(DESC, "CH$(CH) gain middle bit")
+    field(DTYP, "GPIO")
+    field(OUT,  "@$(CHIP=gpiochip0) $(G1)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+    field(FLNK, "$(P)$(S)BitGuard_")
+}
+record(bo, "$(P)$(S)G2") {
+    field(DESC, "CH$(CH) gain MSB")
+    field(DTYP, "GPIO")
+    field(OUT,  "@$(CHIP=gpiochip0) $(G2)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+    field(FLNK, "$(P)$(S)BitGuard_")
+}
+# If raw writes ever leave all three bits high (code 7), re-drive the last
+# accepted gain code.  ODLY: the bo that was just written is still active,
+# so the correction runs from a callback about 20 ms later.
+record(calcout, "$(P)$(S)BitGuard_") {
+    field(ODLY, "0.02")
+    field(INPA, "$(P)$(S)G0 NPP NMS")
+    field(INPB, "$(P)$(S)G1 NPP NMS")
+    field(INPC, "$(P)$(S)G2 NPP NMS")
+    field(CALC, "A&&B&&C")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)$(S)GainCode_.PROC PP")
+}
+
+# =====================================================================
+#  Readbacks — levels actually driven on the pins.
+#  Polled at 1 Hz (RBScan_) and also processed right after every gain
+#  write (FLNK of Set2_), so the records themselves must be Passive.
+#  The fanout processes each readback on its own link instead of an
+#  FLNK chain: a GPIO record whose line could not be requested at
+#  iocInit stays PACT (devGpio) and would stop a chain, leaving
+#  Gain-RB and GainMismatch frozen at their last values.
+# =====================================================================
+# RBFan_ must be Passive so that the FLNK of Set2_ can process it;
+# RBScan_ only supplies the 1 Hz tick.
+record(fanout, "$(P)$(S)RBScan_") {
+    field(SCAN, "1 second")
+    field(LNK1, "$(P)$(S)RBFan_")
+}
+record(fanout, "$(P)$(S)RBFan_") {
+    field(LNK1, "$(P)$(S)G0-RB")
+    field(LNK2, "$(P)$(S)G1-RB")
+    field(LNK3, "$(P)$(S)G2-RB")
+    field(LNK4, "$(P)$(S)GainCalc_")
+}
+record(bi, "$(P)$(S)G0-RB") {
+    field(DESC, "CH$(CH) gain LSB readback")
+    field(DTYP, "GPIO")
+    field(INP,  "@$(CHIP=gpiochip0) $(G0)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+}
+record(bi, "$(P)$(S)G1-RB") {
+    field(DESC, "CH$(CH) gain middle readback")
+    field(DTYP, "GPIO")
+    field(INP,  "@$(CHIP=gpiochip0) $(G1)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+}
+record(bi, "$(P)$(S)G2-RB") {
+    field(DESC, "CH$(CH) gain MSB readback")
+    field(DTYP, "GPIO")
+    field(INP,  "@$(CHIP=gpiochip0) $(G2)")
+    field(ZNAM, "Low")
+    field(ONAM, "High")
+}
+record(calc, "$(P)$(S)GainCalc_") {
+    field(INPA, "$(P)$(S)G0-RB NPP MS")
+    field(INPB, "$(P)$(S)G1-RB NPP MS")
+    field(INPC, "$(P)$(S)G2-RB NPP MS")
+    field(CALC, "A+2*B+4*C")
+    field(FLNK, "$(P)$(S)Gain-RB")
+}
+# Gain code rebuilt from the pins; code 7 shows as an undefined state (MAJOR)
+record(mbbi, "$(P)$(S)Gain-RB") {
+    field(DESC, "CH$(CH) gain code from pins")
+    field(DTYP, "Raw Soft Channel")
+    field(INP,  "$(P)$(S)GainCalc_ NPP MS")
+    field(UNSV, "MAJOR")
+    field(ZRST, "E3")
+    field(ZRVL, "0")
+    field(ONST, "E4")
+    field(ONVL, "1")
+    field(TWST, "E5")
+    field(TWVL, "2")
+    field(THST, "E6")
+    field(THVL, "3")
+    field(FRST, "E7")
+    field(FRVL, "4")
+    field(FVST, "E8")
+    field(FVVL, "5")
+    field(SXST, "E9")
+    field(SXVL, "6")
+    field(FLNK, "$(P)$(S)GainFactor-RB")
+}
+# Numeric transimpedance gain for current conversion (low-noise mode).
+# 0 means the pins show the undefined code 7.
+record(calc, "$(P)$(S)GainFactor-RB") {
+    field(DESC, "CH$(CH) gain in V/A (low-noise mode)")
+    field(INPA, "$(P)$(S)GainCalc_ NPP MS")
+    field(CALC, "A>6?0:10**(A+3)")
+    field(EGU,  "V/A")
+    field(PREC, "0")
+    field(FLNK, "$(P)$(S)GainMismatch")
+}
+# A GPIO record whose line could not be requested (line held by another
+# driver or process) is left permanently PACT by devGpio and never
+# processes.  All records of a channel share one lock set, so a healthy
+# record always reads PACT = 0 from here.
+record(calc, "$(P)$(S)LineFault_") {
+    field(INPA, "$(P)$(S)G0.PACT NPP NMS")
+    field(INPB, "$(P)$(S)G1.PACT NPP NMS")
+    field(INPC, "$(P)$(S)G2.PACT NPP NMS")
+    field(INPD, "$(P)$(S)G0-RB.PACT NPP NMS")
+    field(INPE, "$(P)$(S)G1-RB.PACT NPP NMS")
+    field(INPF, "$(P)$(S)G2-RB.PACT NPP NMS")
+    field(CALC, "A||B||C||D||E||F")
+}
+# Setting vs. pins: Mismatch when the code on the pins is not the last
+# accepted gain code (raw-bit writes, a line that does not follow, ...)
+# or when any gain line of the channel is not under IOC control.
+record(calc, "$(P)$(S)GainMis_") {
+    field(INPA, "$(P)$(S)GainCode_ NPP NMS")
+    field(INPB, "$(P)$(S)GainCalc_ NPP NMS")
+    field(INPC, "$(P)$(S)LineFault_ PP NMS")
+    field(CALC, "A!=B||C")
+}
+record(bi, "$(P)$(S)GainMismatch") {
+    field(DESC, "CH$(CH) gain setting differs from pins")
+    field(DTYP, "Soft Channel")
+    field(INP,  "$(P)$(S)GainMis_ PP NMS")
+    field(ZNAM, "OK")
+    field(ONAM, "Mismatch")
+    field(OSV,  "MAJOR")
+}
+
+# =====================================================================
+#  Overload (PC817C collector, 47k pull-up: LOW at the pin = overload)
+# =====================================================================
+record(bi, "$(P)$(S)Overload") {
+    field(DESC, "CH$(CH) DLPCA-200 overload")
+    field(DTYP, "GPIO")
+    field(INP,  "@$(CHIP=gpiochip0) $(OVL) invert")
+    field(SCAN, ".1 second")
+    field(ZNAM, "Normal")
+    field(ONAM, "Overload")
+    field(OSV,  "MAJOR")
+    field(FLNK, "$(P)$(S)OvlSet_")
+}
+# Blanking window after a gain change.  The DLPCA-200 raises its overload
+# output for 0.1-0.25 s while it switches to or from the highest gain
+# (measured 2026-11-26 on CH1: E8->E9 and E9->E3), which is not a real
+# overload.  OvlBlank_ is 1 for $(BLANK=0.5) s after every accepted gain
+# write (bo HIGH timer; a new write restarts it).  While it is 1 the latch
+# and the event counter ignore the overload input; <S>Overload itself is
+# not masked.  An overload that is still present when the window ends is
+# latched and counted by the next 0.1 s poll.
+record(bo, "$(P)$(S)OvlBlank_") {
+    field(DTYP, "Soft Channel")
+    field(HIGH, "$(BLANK=0.5)")
+    field(ZNAM, "Off")
+    field(ONAM, "Blanking")
+}
+record(calcout, "$(P)$(S)OvlSet_") {
+    field(INPA, "$(P)$(S)Overload NPP NMS")
+    field(INPB, "$(P)$(S)OvlBlank_ NPP NMS")
+    field(CALC, "A&&!B")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)$(S)OverloadLatch PP")
+    field(FLNK, "$(P)$(S)OvlCnt_")
+}
+# Number of overload events (Normal -> Overload transitions seen by the
+# 0.1 s poll, outside the blanking window) since the last OverloadReset.
+record(calcout, "$(P)$(S)OvlCnt_") {
+    field(INPA, "$(P)$(S)Overload NPP NMS")
+    field(INPB, "$(P)$(S)OverloadCount NPP NMS")
+    field(INPC, "$(P)$(S)OvlBlank_ NPP NMS")
+    field(CALC, "A&&!C")
+    field(OOPT, "Transition To Non-zero")
+    field(DOPT, "Use OCAL")
+    field(OCAL, "B+1")
+    field(OUT,  "$(P)$(S)OverloadCount PP")
+}
+record(longout, "$(P)$(S)OverloadCount") {
+    field(DESC, "CH$(CH) overload events since reset")
+    field(DTYP, "Soft Channel")
+    field(VAL,  "0")
+    field(PINI, "YES")
+}
+# Set by any overload, stays set until OverloadReset is written
+record(bi, "$(P)$(S)OverloadLatch") {
+    field(DESC, "CH$(CH) overload seen since reset")
+    field(DTYP, "Soft Channel")
+    field(ZNAM, "Normal")
+    field(ONAM, "Overload")
+    field(OSV,  "MINOR")
+    field(VAL,  "0")
+    field(PINI, "YES")
+}
+# Write 1 to clear the latch.  If the overload is still present the latch
+# simply follows it and stays set.
+record(bo, "$(P)$(S)OverloadReset") {
+    field(DESC, "CH$(CH) clear overload latch")
+    field(DTYP, "Soft Channel")
+    field(ZNAM, "Idle")
+    field(ONAM, "Reset")
+    field(HIGH, "0.5")
+    field(FLNK, "$(P)$(S)OvlClr_")
+}
+record(calcout, "$(P)$(S)OvlClr_") {
+    field(INPA, "$(P)$(S)Overload NPP NMS")
+    field(INPB, "$(P)$(S)OverloadReset NPP NMS")
+    field(CALC, "B")
+    field(OOPT, "When Non-zero")
+    field(DOPT, "Use OCAL")
+    field(OCAL, "A")
+    field(OUT,  "$(P)$(S)OverloadLatch PP")
+    field(FLNK, "$(P)$(S)OvlCntClr_")
+}
+record(calcout, "$(P)$(S)OvlCntClr_") {
+    field(INPA, "$(P)$(S)OverloadReset NPP NMS")
+    field(CALC, "A")
+    field(OOPT, "When Non-zero")
+    field(DOPT, "Use OCAL")
+    field(OCAL, "0")
+    field(OUT,  "$(P)$(S)OverloadCount PP")
+}

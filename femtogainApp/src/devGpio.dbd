@@ -1,0 +1,3 @@
+device(bo, INST_IO, devBoGpio, "GPIO")
+device(bi, INST_IO, devBiGpio, "GPIO")
+registrar(gpioRegistrar)

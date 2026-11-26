@@ -1,0 +1,15 @@
+# EPICS build products (make rebuilds them)
+/bin/
+/lib/
+/dbd/
+/db/
+O.*/
+envPaths
+# runtime files
+.iocsh_history
+pvlist.txt
+autosave/
+__pycache__/
+*.pyc
+*.bak
+*.pre-femtogain

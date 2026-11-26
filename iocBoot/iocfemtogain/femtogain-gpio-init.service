@@ -1,0 +1,13 @@
+[Unit]
+Description=Femto Gain Controller: GPIO safe state (gain lines pull-down = code 000)
+DefaultDependencies=no
+After=local-fs.target systemd-udevd.service
+Before=basic.target femtogain-ioc.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/epics/iocs/femtogain/tools/femtogain-gpio-init.sh
+
+[Install]
+WantedBy=sysinit.target

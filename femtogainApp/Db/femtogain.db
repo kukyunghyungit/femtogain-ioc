@@ -1,0 +1,85 @@
+# femtogain.db — Femto Gain Controller Rev.2: IOC-wide info records
+#   P     PV prefix          CHIP  gpiochip name      S1..S4  channel signal names
+record(stringin, "$(P)Info:Prefix") {
+    field(DESC, "Active PV prefix")
+    field(VAL,  "$(P)")
+    field(PINI, "YES")
+}
+record(stringin, "$(P)Info:Model") {
+    field(VAL,  "Femto Gain Controller v2")
+    field(PINI, "YES")
+}
+record(stringin, "$(P)Info:GpioChip") {
+    field(VAL,  "$(CHIP=gpiochip0)")
+    field(PINI, "YES")
+}
+record(calc, "$(P)Info:Heartbeat") {
+    field(DESC, "IOC alive counter")
+    field(INPA, "$(P)Info:Heartbeat.VAL NPP NMS")
+    field(CALC, "(A+1)%1000000")
+    field(SCAN, "1 second")
+}
+
+# =====================================================================
+#  Summary over the four channels (S1..S4 = channel signal names)
+# =====================================================================
+record(calc, "$(P)OvlAny_") {
+    field(INPA, "$(P)$(S1)Overload CP NMS")
+    field(INPB, "$(P)$(S2)Overload CP NMS")
+    field(INPC, "$(P)$(S3)Overload CP NMS")
+    field(INPD, "$(P)$(S4)Overload CP NMS")
+    field(CALC, "A||B||C||D")
+    field(PINI, "YES")
+    field(FLNK, "$(P)OverloadAny")
+}
+record(bi, "$(P)OverloadAny") {
+    field(DESC, "Any channel in overload now")
+    field(DTYP, "Soft Channel")
+    field(INP,  "$(P)OvlAny_ NPP NMS")
+    field(ZNAM, "Normal")
+    field(ONAM, "Overload")
+    field(OSV,  "MAJOR")
+}
+record(calc, "$(P)OvlLatchAny_") {
+    field(INPA, "$(P)$(S1)OverloadLatch CP NMS")
+    field(INPB, "$(P)$(S2)OverloadLatch CP NMS")
+    field(INPC, "$(P)$(S3)OverloadLatch CP NMS")
+    field(INPD, "$(P)$(S4)OverloadLatch CP NMS")
+    field(CALC, "A||B||C||D")
+    field(PINI, "YES")
+    field(FLNK, "$(P)OverloadLatchAny")
+}
+record(bi, "$(P)OverloadLatchAny") {
+    field(DESC, "Any channel latched an overload")
+    field(DTYP, "Soft Channel")
+    field(INP,  "$(P)OvlLatchAny_ NPP NMS")
+    field(ZNAM, "Normal")
+    field(ONAM, "Overload")
+    field(OSV,  "MINOR")
+}
+# Write 1 to clear the overload latch (and event count) of all channels
+record(bo, "$(P)OverloadResetAll") {
+    field(DESC, "Clear all overload latches")
+    field(DTYP, "Soft Channel")
+    field(ZNAM, "Idle")
+    field(ONAM, "Reset")
+    field(HIGH, "0.5")
+    field(FLNK, "$(P)OvlRstAll_")
+}
+record(calcout, "$(P)OvlRstAll_") {
+    field(INPA, "$(P)OverloadResetAll NPP NMS")
+    field(CALC, "A")
+    field(OOPT, "When Non-zero")
+    field(OUT,  "$(P)OvlRstSeq_.PROC PP")
+}
+record(seq, "$(P)OvlRstSeq_") {
+    field(SELM, "All")
+    field(DOL1, "1")
+    field(LNK1, "$(P)$(S1)OverloadReset PP")
+    field(DOL2, "1")
+    field(LNK2, "$(P)$(S2)OverloadReset PP")
+    field(DOL3, "1")
+    field(LNK3, "$(P)$(S3)OverloadReset PP")
+    field(DOL4, "1")
+    field(LNK4, "$(P)$(S4)OverloadReset PP")
+}

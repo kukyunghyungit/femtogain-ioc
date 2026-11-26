@@ -1,0 +1,14 @@
+# /etc/systemd/system/femtogain-reset.service
+[Unit]
+Description=Femto Gain Controller factory-reset switch (GPIO jumper, header pin 36-34)
+After=femtogain-ioc.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/epics/iocs/femtogain/tools/femtogain-reset-button.py
+Environment=PYTHONUNBUFFERED=1
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

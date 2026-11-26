@@ -1,0 +1,27 @@
+[Unit]
+Description=EPICS IOC - Femto Gain Controller Rev.2 (femtogain)
+Documentation=file:/usr/local/epics/iocs/femtogain/README.md
+After=network-online.target femtogain-gpio-init.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=epics
+SupplementaryGroups=gpio
+Environment=CONSOLE_PORT=20000
+EnvironmentFile=-/usr/local/epics/iocs/femtogain/iocBoot/iocfemtogain/ioc.conf
+WorkingDirectory=/usr/local/epics/iocs/femtogain/iocBoot/iocfemtogain
+LogsDirectory=femtogain
+ExecStartPre=+/usr/local/epics/iocs/femtogain/tools/femtogain-gpio-init.sh
+ExecStart=/usr/bin/procServ --foreground --name=femtogain --ignore=^D^C \
+          --logfile=/var/log/femtogain/ioc.log --logstamp \
+          --chdir=/usr/local/epics/iocs/femtogain/iocBoot/iocfemtogain \
+          ${CONSOLE_PORT} /usr/local/epics/iocs/femtogain/iocBoot/iocfemtogain/start_ioc.sh
+ExecStopPost=+/usr/local/epics/iocs/femtogain/tools/femtogain-gpio-init.sh
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target
