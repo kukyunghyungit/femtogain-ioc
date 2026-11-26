@@ -441,7 +441,7 @@ clone_work_files() {
     local f
     for f in "$h"/femtogain-backup-* "$h"/femtogain-boot-scope "$h"/source "$h"/osc "$h"/img "$h"/md \
              "$h"/.claude "$h"/.claude.json "$h"/.claude.json.backup* "$h"/.viminfo "$h"/.cache "$h"/.Xauthority \
-             "$h"/.ssh/known_hosts "$h"/.ssh/known_hosts.old "$h"/.lesshst "$h"/.python_history "$h"/.wget-hsts; do
+             "$h"/.ssh/known_hosts "$h"/.ssh/known_hosts.old "$h"/.ssh/femtogain_deploy_ed25519 "$h"/.ssh/femtogain_deploy_ed25519.pub "$h"/.lesshst "$h"/.python_history "$h"/.wget-hsts; do
         [ -e "$f" ] && echo "$f"
     done
     return 0

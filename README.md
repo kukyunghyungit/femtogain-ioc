@@ -81,7 +81,7 @@ femtogainctl status            # 서비스 + 채널별 게인/readback/Overload/
 femtogainctl gain 2 1e6        # 채널 2를 1e6 V/A로 (코드 3, E6, It 같은 이름도 가능)
 femtogainctl ovl reset         # Overload 래치 전체 해제
 femtogainctl test              # 자가 시험 (실제 게인이 바뀜, 끝나면 복원)
-femtogainctl setup             # 호스트명 → PREFIX → 비밀번호 → IP
+femtogainctl setup             # 호스트명 → PREFIX → 채널 이름 → 비밀번호 → IP
 femtogainctl console | log | restart | pvs | autosave | web | help
 ```
 
@@ -92,7 +92,7 @@ femtogainctl console | log | restart | pvs | autosave | web | help
 - 복제: `femtogainctl clone-prep && poweroff` → eMMC 복제 → 각 장비에서 `femtogainctl setup` → `femtogainctl test`.
   - `femtogainctl clone-prep --dry-run`은 아무것도 바꾸지 않고 할 일과 지울 파일 목록만 보여 줍니다.
   - `clone-prep`은 `/boot/config.ini`에서 `spi0` 오버레이가 빠져 있는지 확인하고, 홈 디렉터리의 개발 작업 파일(소스, 백업, 문서, 작업 기록)을 지울지 따로 묻습니다(기본값은 유지).
-- 채널 이름(CH1–CH4, 기본 `Io It If Ir`)은 `femtogainctl chname`이나 웹 UI의 "장비 설정"에서 바꿉니다. 예: `femtogainctl chname 2 If`(한 채널), `femtogainctl chname Io If It Ir`(네 채널 한 번에, 이름을 서로 바꿀 때). PV 이름이 `<PREFIX><이름>Gain`으로 바뀌고 IOC가 재시작되어 전 채널이 E3로 돌아갑니다.
+- 채널 이름(CH1–CH4, 기본 `Io If It Ir`)은 `femtogainctl chname`이나 웹 UI의 "장비 설정"에서 바꿉니다. 예: `femtogainctl chname 2 If`(한 채널), `femtogainctl chname Io If It Ir`(네 채널 한 번에, 이름을 서로 바꿀 때). PV 이름이 `<PREFIX><이름>Gain`으로 바뀌고 IOC가 재시작되어 전 채널이 E3로 돌아갑니다.
 - 게인을 바꾼 직후 0.5초(`ioc.conf`의 `OVL_BLANK`) 동안은 `<S>OverloadLatch`와 `<S>OverloadCount`가 Overload 입력을 무시합니다. 증폭기가 최고 게인으로 들어가거나 나올 때 0.1–0.25초 동안 Overload를 내기 때문입니다. `<S>Overload` 자체는 가리지 않습니다.
 - `tools/install.sh`는 `tools/femtogain-boot-overlay.sh`로 `/boot/config.ini`의 `spi0` 오버레이를 뺍니다. `spi0`가 핀 19/21/23/24(C3_G1, C3_G2, C4_G1, C4_G2)를 잡기 때문이며, 설치 후 재부팅해야 적용됩니다. 부트 파티션이 `/boot`에 마운트되어 있지 않으면 수정하지 않고 오류를 냅니다.
 
