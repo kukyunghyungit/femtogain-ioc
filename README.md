@@ -105,3 +105,12 @@ make -C /usr/local/epics/support/autosave
 make -C /usr/local/epics/iocs/femtogain
 /usr/local/epics/iocs/femtogain/tools/install.sh
 ```
+
+## MEDM 화면
+
+`femtogainApp/op/adl/femtogain_4CH.adl` — Rev.1의 `FEMTO_5CH.adl`을 바탕으로 만든 4채널 화면입니다.
+채널 이름을 바꿀 수 있으므로 매크로로 넘깁니다(`ioc.conf`의 `PREFIX`, `CH1_NAME`–`CH4_NAME`과 같은 값).
+
+    medm -x -macro "P=GC01:,CH1=Io,CH2=If,CH3=It,CH4=Ir" femtogain_4CH.adl
+
+채널마다 Overload 상태, 래치, 횟수, 게인 선택, 게인 읽기값, 불일치 표시, 래치 리셋 버튼이 있고 아래에 전체 리셋 버튼이 있습니다.
